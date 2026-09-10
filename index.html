@@ -12,8 +12,6 @@
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .fade-in { animation: fadeIn 0.3s ease-out forwards; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        .live-indicator { animation: pulse 2s infinite; }
         .time-card { padding: 16px; background: #f8fafc; border-radius: 12px; margin-bottom: 12px; }
     </style>
 </head>
@@ -233,17 +231,9 @@
     const errorMsg = document.getElementById('error-msg');
     const statusEl = document.getElementById('status');
 
-    function getBakuTime() {
-        return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Baku' });
-    }
-
-    function getBakuDate() {
-        return new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Baku' });
-    }
-
-    function getTodayKey() {
-        return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Baku' });
-    }
+    function getBakuTime() { return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Baku' }); }
+    function getBakuDate() { return new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Baku' }); }
+    function getTodayKey() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Baku' }); }
 
     function formatDuration(ms) {
         if (ms < 0) ms = 0;
@@ -251,7 +241,7 @@
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
-        return `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+        return `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2,'0')}`;
     }
 
     setInterval(() => {
@@ -261,40 +251,39 @@
         if (date) date.innerText = getBakuDate().charAt(0).toUpperCase() + getBakuDate().slice(1);
     }, 1000);
 
+    // Тест подключения
     sb.from('employees').select('count').limit(1).then(({data, error}) => {
         if (error) {
+            console.error('❌ Supabase error:', error);
             statusEl.style.background = '#fee2e2';
             statusEl.style.color = '#dc2626';
-            statusEl.innerHTML = '❌ Ошибка подключения к базе';
+            statusEl.innerHTML = 'Ошибка: ' + error.message;
         } else {
+            console.log('✅ База доступна, всего сотрудников:', data[0]?.count || 0);
             statusEl.style.background = '#dcfce7';
             statusEl.style.color = '#16a34a';
-            statusEl.innerHTML = '✅ Система готова к работе';
+            statusEl.innerHTML = 'Готово к работе';
             setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
         }
     });
 
     async function loadEmps() {
-        const {data: emps} = await sb.from('employees').select('*');
-        if (emps) allEmps = emps;
-        const {data: logs} = await sb.from('activity_logs').select('*').order('created_at', {ascending: false}).limit(500);
-        if (logs) allLogs = logs;
-    }
+        try {
+            const {data: emps} = await sb.from('employees').select('*');
+            if (emps) allEmps = emps;
+            else allEmps = [];
+        } catch (e) {
+            console.error('❌ Ошибка загрузки сотрудников:', e);
+            allEmps = [];
+        }
 
-    async function showMain() {
-        loginBox.style.display = 'none';
-        if (user.role === 'admin') {
-            adminBox.style.display = 'block';
-            updateStats();
-            renderEmpList();
-            fillSelects();
-            document.getElementById('cal-date').value = getTodayKey();
-            document.getElementById('analytics-from').value = getTodayKey();
-            document.getElementById('analytics-to').value = getTodayKey();
-        } else {
-            empBox.style.display = 'block';
-            renderEmpUI();
-            loadEmpHistory();
+        try {
+            const {data: logs} = await sb.from('activity_logs').select('*').order('created_at', {ascending: false}).limit(500);
+            if (logs) allLogs = logs;
+            else allLogs = [];
+        } catch (e) {
+            console.error('❌ Ошибка загрузки логов:', e);
+            allLogs = [];
         }
     }
 
@@ -306,123 +295,33 @@
         document.getElementById('stat-offline').innerText = emps.filter(u => u.status === 'offline').length;
     }
 
-    function calculateWorkTime(empId, from, to) {
-        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
-        let workMs = 0;
-        let lastCheckIn = null;
-        const now = new Date();
-
-        empLogs.forEach(l => {
-            const d = new Date(l.created_at);
-            if (l.action.includes('Начало смены') || l.action.includes('Вернулся')) {
-                lastCheckIn = d;
-            } else if (l.action.includes('Пауза') || l.action.includes('Завершил')) {
-                if (lastCheckIn) {
-                    workMs += (d - lastCheckIn);
-                    lastCheckIn = null;
-                }
-            }
-        });
-
-        if (lastCheckIn && user.id === empId && allEmps.find(u => u.id === empId)?.status === 'working') {
-            workMs += (now - lastCheckIn);
-        }
-
-        return formatDuration(workMs);
-    }
-
-    function groupByDay(empId, from, to) {
-        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
-        const grouped = {};
-        let lastCheckIn = null;
-
-        empLogs.forEach(l => {
-            const day = l.created_at.split('T')[0];
-            if (!grouped[day]) grouped[day] = 0;
-            const d = new Date(l.created_at);
-
-            if (l.action.includes('Начало смены') || l.action.includes('Вернулся')) {
-                lastCheckIn = d;
-            } else if (l.action.includes('Пауза') || l.action.includes('Завершил')) {
-                if (lastCheckIn) {
-                    grouped[lastCheckIn.toISOString().split('T')[0]] += (d - lastCheckIn);
-                    lastCheckIn = null;
-                }
-            }
-        });
-
-        if (lastCheckIn && user.id === empId && allEmps.find(u => u.id === empId)?.status === 'working') {
-            const day = getTodayKey();
-            grouped[day] = (grouped[day] || 0) + (new Date() - lastCheckIn);
-        }
-
-        return grouped;
-    }
-
-    function getPeriodDates(period) {
-        const now = new Date();
-        const dates = {};
-        switch (period) {
-            case 'day':
-                dates.from = dates.to = getTodayKey();
-                break;
-            case 'week':
-                const startOfWeek = new Date(now);
-                startOfWeek.setDate(now.getDate() - now.getDay());
-                dates.from = startOfWeek.toISOString().split('T')[0];
-                dates.to = now.toISOString().split('T')[0];
-                break;
-            case 'month':
-                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                dates.from = startOfMonth.toISOString().split('T')[0];
-                dates.to = endOfMonth.toISOString().split('T')[0];
-                break;
-            case 'year':
-                dates.from = `${now.getFullYear()}-01-01`;
-                dates.to = `${now.getFullYear()}-12-31`;
-                break;
-            case 'custom':
-                dates.from = document.getElementById('analytics-from').value;
-                dates.to = document.getElementById('analytics-to').value;
-                break;
-        }
-        return dates;
-    }
-
-    function fillSelects() {
-        const emps = allEmps.filter(u => u.role !== 'admin');
-        const opts = '<option value="">Выберите...</option>' + emps.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
-        const calOpts = '<option value="all">📊 Все сотрудники</option>' + emps.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
-        document.getElementById('fine-emp').innerHTML = opts;
-        document.getElementById('pass-emp').innerHTML = opts;
-        document.getElementById('cal-emp').innerHTML = calOpts;
-        document.getElementById('analytics-emp').innerHTML = opts;
-    }
-
     function renderEmpList() {
         const list = document.getElementById('emp-list');
         const emps = allEmps.filter(u => u.role !== 'admin');
         list.innerHTML = '';
+
         emps.forEach(u => {
-            const { workMs, breakMs } = calculateWorkTime(u.id);
-            const workTime = formatDuration(workMs);
-            const breakTime = formatDuration(breakMs);
+            // 🔒 Защита от undefined
+            const name = u?.name || 'Неизвестно';
+            const login = u?.login || 'no-login';
+            const status = u?.status || 'offline';
+            const id = u?.id || '';
+
             let sc = '#94a3b8', bg = '#f8fafc', txt = '⚫ Оффлайн', icon = '🏠';
-            if (u.status === 'working') { sc = '#10b981'; bg = '#ecfdf5'; txt = '🟢 На работе'; icon = '💼'; }
-            else if (u.status === 'break') { sc = '#f59e0b'; bg = '#fffbeb'; txt = '☕ На перерыве'; icon = '☕'; }
+            if (status === 'working') { sc = '#10b981'; bg = '#ecfdf5'; txt = '🟢 На работе'; icon = '💼'; }
+            else if (status === 'break') { sc = '#f59e0b'; bg = '#fffbeb'; txt = '☕ На перерыве'; icon = '☕'; }
 
             const div = document.createElement('div');
             div.style.cssText = `padding:20px; border-radius:14px; border:2px solid ${bg}; background:${bg}; display:grid; grid-template-columns: 1fr auto; gap:15px; align-items:center;`;
             div.innerHTML = `
                 <div style="display:flex; align-items:center; gap:15px;">
-                    <div style="width:55px; height:55px; background:white; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:${sc}; box-shadow:0 2px 8px rgba(0,0,0,0.05);">${u.name.charAt(0)}</div>
+                    <div style="width:55px; height:55px; background:white; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:${sc}; box-shadow:0 2px 8px rgba(0,0,0,0.05);">${name.charAt(0).toUpperCase()}</div>
                     <div>
-                        <div style="font-weight:700; color:#1e293b; font-size:16px;">${u.name}</div>
-                        <div style="color:#64748b; font-size:13px; margin-bottom:4px;">@${u.login}</div>
+                        <div style="font-weight:700; color:#1e293b; font-size:16px;">${name}</div>
+                        <div style="color:#64748b; font-size:13px; margin-bottom:4px;">@${login}</div>
                         <div style="display:flex; gap:15px; font-size:13px;">
-                            <span style="color:${sc}; font-weight:600;">${icon} ${workTime}</span>
-                            <span style="color:#f59e0b; font-weight:600;">☕ ${breakTime}</span>
+                            <span style="color:${sc}; font-weight:600;">${icon} 00:00:00</span>
+                            <span style="color:#f59e0b; font-weight:600;">☕ 00:00:00</span>
                         </div>
                     </div>
                 </div>
@@ -432,45 +331,199 @@
         });
     }
 
-    // Аналитика
-    document.getElementById('btn-show-analytics').addEventListener('click', async () => {
-        const empId = document.getElementById('analytics-emp').value;
-        const period = document.getElementById('analytics-period').value;
-        const {from, to} = getPeriodDates(period);
-        if (!empId || !from || !to) return alert('Выберите сотрудника и период');
-        
-        const emp = allEmps.find(u => u.id === empId);
-        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
-        const grouped = groupByDay(empId, empLogs, from, to);
-        const totalWorkMs = Object.values(grouped).reduce((a, b) => a + b, 0);
-
-        const results = document.getElementById('analytics-results');
-        results.innerHTML = `
-            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Общий фонд времени: ${formatDuration(totalWorkMs)}</div>
-            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Штрафы:</div>
-            <div id="analytics-fines" style="margin-bottom:20px;"></div>
-            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Разбивка по дням:</div>
-        `;
-
-        const finesDiv = document.getElementById('analytics-fines');
-        const fines = empLogs.filter(l => l.action === 'ШТРАФ');
-        if (fines.length === 0) {
-            finesDiv.innerHTML = '<div style="color:#94a3b8; padding:12px;">Нет штрафов</div>';
+    function showMain() {
+        loginBox.style.display = 'none';
+        if (user.role === 'admin') {
+            adminBox.style.display = 'block';
+            empBox.style.display = 'none';
+            document.getElementById('admin-name').innerText = user.name || 'Админ';
+            updateStats();
+            renderEmpList();
+            fillSelects();
+            document.getElementById('cal-date').value = getTodayKey();
+            document.getElementById('analytics-from').value = getTodayKey();
+            document.getElementById('analytics-to').value = getTodayKey();
         } else {
-            fines.forEach(f => {
-                finesDiv.innerHTML += `<div style="background:#fee2e2; padding:12px; border-radius:10px; margin-bottom:8px; color:#dc2626; font-weight:600;">${f.details}</div>`;
+            adminBox.style.display = 'none';
+            empBox.style.display = 'block';
+            document.getElementById('emp-name').innerText = user.name || 'Сотрудник';
+            renderEmpUI();
+            loadEmpHistory();
+        }
+    }
+
+    function fillSelects() {
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        const opts = '<option value="">Выберите...</option>' + emps.map(u => `<option value="${u.id || ''}">${u.name || 'Без имени'}</option>`).join('');
+        const calOpts = '<option value="all">📊 Все сотрудники</option>' + emps.map(u => `<option value="${u.id || ''}">${u.name || 'Без имени'}</option>`).join('');
+        document.getElementById('fine-emp').innerHTML = opts;
+        document.getElementById('pass-emp').innerHTML = opts;
+        document.getElementById('cal-emp').innerHTML = calOpts;
+        document.getElementById('analytics-emp').innerHTML = opts;
+    }
+
+    // Кнопки сотрудника
+    function renderEmpUI() {
+        const badge = document.getElementById('emp-badge');
+        const card = document.getElementById('emp-status-card');
+        const actions = document.getElementById('emp-actions');
+        const logsDiv = document.getElementById('emp-logs');
+
+        card.style.background = 'linear-gradient(135deg,#2563eb,#3b82f6)';
+
+        const status = user?.status || 'offline';
+        const name = user?.name || 'Сотрудник';
+
+        if (status === 'offline') {
+            badge.innerText = '🏠 Не на работе';
+            actions.innerHTML = '<button id="btn-start" style="width:100%; padding:20px; background:linear-gradient(135deg,#10b981,#34d399); color:white; border:none; border-radius:14px; font-size:18px; font-weight:800; cursor:pointer; box-shadow:0 4px 15px rgba(16,185,129,0.3);">▶ НАЧАТЬ ДЕНЬ</button>';
+            document.getElementById('btn-start').onclick = async () => {
+                try {
+                    const {error} = await sb.from('employees').update({status:'working'}).eq('id', user.id);
+                    if (error) throw error;
+                    const {error: logErr} = await sb.from('activity_logs').insert([{employee_id:user.id, action:'Начало смены'}]);
+                    if (logErr) throw logErr;
+                    user.status = 'working';
+                    renderEmpUI();
+                } catch (e) {
+                    console.error('❌ Ошибка при старте:', e);
+                    alert('Не удалось начать смену: ' + (e.message || 'неизвестная ошибка'));
+                }
+            };
+        } else if (status === 'working') {
+            badge.innerText = '💼 На работе';
+            badge.style.background = '#10b981';
+            actions.innerHTML = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;"><button id="btn-pause" style="padding:20px; background:linear-gradient(135deg,#f59e0b,#fbbf24); color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; box-shadow:0 4px 15px rgba(245,158,11,0.3);">⏸ ПАУЗА</button><button id="btn-stop" style="padding:20px; background:linear-gradient(135deg,#ef4444,#f87171); color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; box-shadow:0 4px 15px rgba(239,68,68,0.3);">⏹ ОСТАНОВИТЬ</button></div>';
+            document.getElementById('btn-pause').onclick = async () => {
+                try {
+                    const {error} = await sb.from('employees').update({status:'break'}).eq('id', user.id);
+                    if (error) throw error;
+                    const {error: logErr} = await sb.from('activity_logs').insert([{employee_id:user.id, action:'Пауза'}]);
+                    if (logErr) throw logErr;
+                    user.status = 'break';
+                    renderEmpUI();
+                } catch (e) {
+                    console.error('❌ Ошибка паузы:', e);
+                    alert('Не удалось поставить на паузу');
+                }
+            };
+            document.getElementById('btn-stop').onclick = async () => {
+                try {
+                    const {error} = await sb.from('employees').update({status:'offline'}).eq('id', user.id);
+                    if (error) throw error;
+                    const {error: logErr} = await sb.from('activity_logs').insert([{employee_id:user.id, action:'Завершил смену'}]);
+                    if (logErr) throw logErr;
+                    user.status = 'offline';
+                    renderEmpUI();
+                } catch (e) {
+                    console.error('❌ Ошибка остановки:', e);
+                    alert('Не удалось завершить смену');
+                }
+            };
+        } else if (status === 'break') {
+            badge.innerText = '☕ На паузе';
+            badge.style.background = '#f59e0b';
+            card.style.background = 'linear-gradient(135deg,#d97706,#f59e0b)';
+            actions.innerHTML = '<div style="text-align:center; margin-bottom:15px; font-weight:700; color:#92400e; font-size:15px;">Причина возвращения:</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><button class="ret-btn" data-r="Обед" style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">🍽 Обед</button><button class="ret-btn" data-r="Перекур" style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">🚬 Перекур</button><button class="ret-btn" data-r="Личные" style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">👤 Личные</button><button class="ret-btn" data-r="Тех." style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">🔧 Тех.</button></div>';
+            document.querySelectorAll('.ret-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    try {
+                        const r = btn.dataset.r;
+                        const {error} = await sb.from('employees').update({status:'working'}).eq('id', user.id);
+                        if (error) throw error;
+                        const {error: logErr} = await sb.from('activity_logs').insert([{employee_id:user.id, action:'Вернулся ('+r+')', details:r}]);
+                        if (logErr) throw logErr;
+                        user.status = 'working';
+                        renderEmpUI();
+                    } catch (e) {
+                        console.error('❌ Ошибка возврата:', e);
+                        alert('Не удалось вернуться');
+                    }
+                };
             });
         }
 
-        const daysDiv = document.createElement('div');
-        Object.entries(grouped).forEach(([day, ms]) => {
-            const time = formatDuration(ms);
-            const div = document.createElement('div');
-            div.style.cssText = 'background:#f8fafc; padding:12px; margin-bottom:8px; border-left:4px solid #2563eb; border-radius:8px; display:flex; justify-content:space-between;';
-            div.innerHTML = `<div style="font-weight:600; color:#1e293b;">${day}</div><div style="color:#64748b;">${time}</div>`;
-            daysDiv.appendChild(div);
+        // Журнал
+        const today = getTodayKey();
+        const todayLogs = (allLogs || []).filter(l => l.employee_id === user.id && l.created_at.startsWith(today));
+        logsDiv.innerHTML = todayLogs.length ? '' : '<div style="text-align:center; color:#94a3b8; padding:20px;">Нет записей за сегодня</div>';
+        todayLogs.forEach(l => {
+            const t = new Date(l.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Baku'});
+            logsDiv.innerHTML += `<div style="background:#f8fafc; padding:14px; border-radius:10px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; border-left:4px solid #2563eb;"><span style="font-weight:600; color:#1e293b;">${l.action}${l.details ? ' ('+l.details+')' : ''}</span><span style="color:#64748b; font-family:monospace; font-size:14px;">${t}</span></div>`;
         });
-        results.appendChild(daysDiv);
+    }
+
+    function loadEmpHistory() {
+        const historyDiv = document.getElementById('emp-history');
+        historyDiv.innerHTML = '<div style="text-align:center; color:#64748b; padding:20px;">⏳ Загрузка...</div>';
+        const hist = (allLogs || []).filter(l => l.employee_id === user.id).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+        if (hist.length === 0) {
+            historyDiv.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">История пуста</div>';
+            return;
+        }
+        let html = '<div style="display:grid; gap:8px;">';
+        hist.forEach(l => {
+            const d = new Date(l.created_at).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Baku'});
+            const t = new Date(l.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Baku'});
+            html += `<div style="background:#f8fafc; padding:12px 15px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; font-size:14px;"><span style="color:#1e293b; font-weight:500;">${l.action}${l.details ? ' ('+l.details+')' : ''}</span><span style="color:#64748b; font-family:monospace;">${d} ${t}</span></div>`;
+        });
+        historyDiv.innerHTML = html + '</div>';
+    }
+
+    // Вход
+    btnLogin.addEventListener('click', async function() {
+        const login = document.getElementById('inp-login').value.trim().toLowerCase();
+        const pass = document.getElementById('inp-pass').value.trim();
+        
+        if (!login) {
+            errorMsg.innerText = 'Введите логин!';
+            errorMsg.style.display = 'block';
+            return;
+        }
+        
+        btnLogin.innerText = '⏳ Вход...';
+        btnLogin.disabled = true;
+        errorMsg.style.display = 'none';
+
+        try {
+            const {data, error} = await sb.from('employees').select('*').eq('login', login).single();
+            if (error) throw error;
+            if (!data) throw new Error('Пользователь не найден');
+
+            if (data.role === 'admin' && data.password !== pass) {
+                throw new Error('Неверный пароль');
+            }
+
+            user = data;
+            localStorage.setItem('at_user', JSON.stringify(user));
+            await loadEmps();
+            showMain();
+
+        } catch (e) {
+            console.error('❌ Ошибка входа:', e);
+            errorMsg.innerText = 'Ошибка: ' + (e.message || 'неизвестная ошибка');
+            errorMsg.style.display = 'block';
+            btnLogin.innerText = '🔐 Войти в систему';
+            btnLogin.disabled = false;
+        }
+    });
+
+    // Вход по Enter
+    document.getElementById('inp-login').addEventListener('keydown', e => {
+        if (e.key === 'Enter') btnLogin.click();
+    });
+    document.getElementById('inp-pass').addEventListener('keydown', e => {
+        if (e.key === 'Enter') btnLogin.click();
+    });
+
+    // Выход
+    document.getElementById('btn-logout-admin').addEventListener('click', () => {
+        localStorage.removeItem('at_user');
+        location.reload();
+    });
+    document.getElementById('btn-logout-emp').addEventListener('click', () => {
+        localStorage.removeItem('at_user');
+        location.reload();
     });
 
     // Вкладки
@@ -493,73 +546,108 @@
         });
     });
 
-    document.getElementById('analytics-period').addEventListener('change', function() {
-        const period = this.value;
-        document.getElementById('custom-dates').style.display = period === 'custom' ? 'flex' : 'none';
-    });
+    // Аналитика
+    document.getElementById('btn-show-analytics').addEventListener('click', async () => {
+        const empId = document.getElementById('analytics-emp').value;
+        const period = document.getElementById('analytics-period').value;
+        if (!empId) return alert('Выберите сотрудника');
+        
+        const emp = allEmps.find(u => u.id === empId);
+        if (!emp) return alert('Сотрудник не найден');
 
-    // Вход
-    btnLogin.addEventListener('click', async () => {
-        const login = document.getElementById('inp-login').value.trim().toLowerCase();
-        const pass = document.getElementById('inp-pass').value.trim();
-        if (!login) {
-            errorMsg.innerText = 'Введите логин!';
-            errorMsg.style.display = 'block';
-            return;
+        const now = new Date();
+        let from, to;
+        switch (period) {
+            case 'day': from = to = getTodayKey(); break;
+            case 'week': 
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                from = startOfWeek.toISOString().split('T')[0];
+                to = now.toISOString().split('T')[0];
+                break;
+            case 'month':
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                from = startOfMonth.toISOString().split('T')[0];
+                to = endOfMonth.toISOString().split('T')[0];
+                break;
+            case 'year':
+                from = `${now.getFullYear()}-01-01`;
+                to = `${now.getFullYear()}-12-31`;
+                break;
+            case 'custom':
+                from = document.getElementById('analytics-from').value;
+                to = document.getElementById('analytics-to').value;
+                if (!from || !to) return alert('Укажите даты');
+                break;
         }
-        btnLogin.innerText = '⏳ Вход...';
-        btnLogin.disabled = true;
 
-        const {data, error} = await sb.from('employees').select('*').eq('login', login).single();
-        if (error || !data) {
-            errorMsg.innerText = '❌ Пользователь не найден!';
-            errorMsg.style.display = 'block';
-            btnLogin.innerText = '🔐 Войти в систему';
-            btnLogin.disabled = false;
-            return;
+        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
+        const grouped = {};
+        let lastCheckIn = null;
+
+        empLogs.forEach(l => {
+            const day = l.created_at.split('T')[0];
+            if (!grouped[day]) grouped[day] = 0;
+            const d = new Date(l.created_at);
+
+            if (l.action.includes('Начало смены') || l.action.includes('Вернулся')) {
+                lastCheckIn = d;
+            } else if (l.action.includes('Пауза') || l.action.includes('Завершил')) {
+                if (lastCheckIn) {
+                    grouped[lastCheckIn.toISOString().split('T')[0]] += (d - lastCheckIn);
+                    lastCheckIn = null;
+                }
+            }
+        });
+
+        if (lastCheckIn && emp.status === 'working') {
+            const day = getTodayKey();
+            grouped[day] = (grouped[day] || 0) + (new Date() - lastCheckIn);
         }
 
-        if (data.role === 'admin' && data.password !== pass) {
-            errorMsg.innerText = '❌ Неверный пароль!';
-            errorMsg.style.display = 'block';
-            btnLogin.innerText = '🔐 Войти в систему';
-            btnLogin.disabled = false;
-            return;
+        const results = document.getElementById('analytics-results');
+        results.innerHTML = `
+            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Общий фонд времени: ${Object.values(grouped).reduce((a,b)=>a+b,0) > 0 ? formatDuration(Object.values(grouped).reduce((a,b)=>a+b,0)) : '00:00:00'}</div>
+            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Штрафы:</div>
+            <div id="analytics-fines" style="margin-bottom:20px;"></div>
+            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Разбивка по дням:</div>
+        `;
+
+        const finesDiv = document.getElementById('analytics-fines');
+        const fines = empLogs.filter(l => l.action === 'ШТРАФ');
+        if (fines.length === 0) {
+            finesDiv.innerHTML = '<div style="color:#94a3b8; padding:12px;">Нет штрафов</div>';
+        } else {
+            fines.forEach(f => {
+                finesDiv.innerHTML += `<div style="background:#fee2e2; padding:12px; border-radius:10px; margin-bottom:8px; color:#dc2626; font-weight:600;">${f.details}</div>`;
+            });
         }
 
-        user = data;
-        localStorage.setItem('at_user', JSON.stringify(user));
-        await loadEmps();
-        showMain();
-    });
-
-    // Вход по Enter
-    document.getElementById('inp-login').addEventListener('keydown', e => {
-        if (e.key === 'Enter') btnLogin.click();
-    });
-    document.getElementById('inp-pass').addEventListener('keydown', e => {
-        if (e.key === 'Enter') btnLogin.click();
-    });
-
-    // Выход
-    document.getElementById('btn-logout-admin').addEventListener('click', () => {
-        localStorage.removeItem('at_user');
-        location.reload();
-    });
-    document.getElementById('btn-logout-emp').addEventListener('click', () => {
-        localStorage.removeItem('at_user');
-        location.reload();
+        const daysDiv = document.createElement('div');
+        Object.entries(grouped).forEach(([day, ms]) => {
+            const time = formatDuration(ms);
+            const div = document.createElement('div');
+            div.style.cssText = 'background:#f8fafc; padding:12px; margin-bottom:8px; border-left:4px solid #2563eb; border-radius:8px; display:flex; justify-content:space-between;';
+            div.innerHTML = `<div>${day}</div><div>${time}</div>`;
+            daysDiv.appendChild(div);
+        });
+        results.appendChild(daysDiv);
     });
 
     // Авто-вход
     (async () => {
         const saved = JSON.parse(localStorage.getItem('at_user'));
         if (saved && saved.id) {
-            const {data} = await sb.from('employees').select('*').eq('id', saved.id).single();
-            if (data) {
-                user = data;
-                await loadEmps();
-                showMain();
+            try {
+                const {data} = await sb.from('employees').select('*').eq('id', saved.id).single();
+                if (data) {
+                    user = data;
+                    await loadEmps();
+                    showMain();
+                }
+            } catch (e) {
+                console.error('Автовход failed:', e);
             }
         }
     })();
