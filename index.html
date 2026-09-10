@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AquaTrack - Учет рабочего времени</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #1e293b; line-height: 1.5; }
+        input:focus, select:focus, button:focus { outline: 2px solid #3b82f6; outline-offset: 2px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        /* Анимации */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- ЭКРАН ВХОДА -->
+<div id="login-box" class="fade-in" style="background:white; padding:40px 30px; border-radius:24px; box-shadow:0 10px 40px rgba(0,0,0,0.08); max-width:450px; margin:60px auto;">
+    <div style="text-align:center; margin-bottom:30px;">
+        <div style="width:80px; height:80px; background:linear-gradient(135deg,#2563eb,#3b82f6); border-radius:20px; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">⏱</div>
+        <h1 style="margin:0; color:#1e293b; font-size:28px; font-weight:800;">AquaTrack</h1>
+        <p style="color:#64748b; margin:8px 0 0 0; font-size:15px;">Система учета рабочего времени</p>
+    </div>
+    <div id="status" style="padding:12px; background:#eff6ff; border-radius:12px; margin-bottom:20px; font-size:14px; text-align:center; color:#2563eb;">🔄 Подключение к базе...</div>
+    <input type="text" id="inp-login" placeholder="Логин" style="width:100%; padding:14px; margin-bottom:12px; border:2px solid #e2e8f0; border-radius:12px; font-size:16px; transition:0.2s;">
+    <input type="password" id="inp-pass" placeholder="Пароль" style="width:100%; padding:14px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:12px; font-size:16px; transition:0.2s;">
+    <button id="btn-login" style="width:100%; padding:16px; background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; border:none; border-radius:12px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 15px rgba(37,99,235,0.3); transition:0.2s;">🔐 Войти в систему</button>
+    <p id="error-msg" style="color:#ef4444; font-size:14px; margin-top:15px; display:none; text-align:center; font-weight:500;"></p>
+</div>
+
+<!-- КАБИНЕТ АДМИНА -->
+<div id="admin-box" class="fade-in" style="display:none;">
+    <div style="background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; padding:25px 30px; border-radius:20px; margin-bottom:25px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 10px 30px rgba(37,99,235,0.2); flex-wrap: wrap; gap: 15px;">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div style="width:50px; height:50px; background:rgba(255,255,255,0.2); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px;">⏱</div>
+            <div>
+                <div style="font-size:22px; font-weight:800;">AquaTrack</div>
+                <div style="opacity:0.9; font-size:13px;">Панель администратора</div>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px;">
+            <div style="text-align:right;">
+                <div id="admin-name" style="font-weight:700; font-size:16px;"></div>
+                <div style="opacity:0.8; font-size:12px;">Администратор</div>
+            </div>
+            <button id="btn-logout-admin" style="padding:10px 20px; background:rgba(255,255,255,0.2); color:white; border:none; border-radius:10px; cursor:pointer; font-weight:600; font-size:14px;">🚪 Выйти</button>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:15px; margin-bottom:25px;">
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #2563eb;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">👥 Всего</div>
+            <div id="stat-total" style="font-size:32px; font-weight:800; color:#1e293b;">0</div>
+        </div>
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #10b981;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">🟢 На работе</div>
+            <div id="stat-active" style="font-size:32px; font-weight:800; color:#10b981;">0</div>
+        </div>
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #f59e0b;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">☕ Перерыв</div>
+            <div id="stat-break" style="font-size:32px; font-weight:800; color:#f59e0b;">0</div>
+        </div>
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #94a3b8;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">⚫ Оффлайн</div>
+            <div id="stat-offline" style="font-size:32px; font-weight:800; color:#94a3b8;">0</div>
+        </div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-bottom:25px; flex-wrap:wrap; overflow-x: auto; padding-bottom: 5px;">
+        <button class="tab-btn active" data-tab="monitoring" style="padding:12px 24px; background:#2563eb; color:white; border:none; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">📊 Мониторинг</button>
+        <button class="tab-btn" data-tab="calendar" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">📅 Календарь</button>
+        <button class="tab-btn" data-tab="fines" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">💰 Штрафы</button>
+        <button class="tab-btn" data-tab="add" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">➕ Добавить</button>
+        <button class="tab-btn" data-tab="settings" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">⚙️ Настройки</button>
+    </div>
+
+    <div id="tab-monitoring" class="tab-content">
+        <div style="background:white; padding:25px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+            <h2 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">👥 Все сотрудники</h2>
+            <div id="emp-list" style="display:grid; gap:12px;"></div>
+        </div>
+    </div>
+
+    <div id="tab-calendar" class="tab-content" style="display:none;">
+        <div style="background:white; padding:25px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+            <h2 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📅 История по датам</h2>
+            <div style="display:flex; gap:15px; margin-bottom:25px; flex-wrap:wrap; align-items:flex-end;">
+                <div style="flex:1; min-width:200px;">
+                    <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+                    <select id="cal-emp" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+                </div>
+                <div style="flex:1; min-width:150px;">
+                    <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Дата</label>
+                    <input type="date" id="cal-date" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+                </div>
+                <button id="btn-cal-show" style="padding:12px 24px; background:#2563eb; color:white; border:none; border-radius:10px; font-weight:600; cursor:pointer; font-size:15px; height: 46px;">🔍 Показать</button>
+            </div>
+            <div id="cal-results"></div>
+        </div>
+    </div>
+
+    <div id="tab-fines" class="tab-content" style="display:none;">
+        <div style="background:white; padding:30px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); max-width:600px;">
+            <h2 style="margin:0 0 25px 0; color:#1e293b; font-size:18px;">💰 Выписать штраф</h2>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+            <select id="fine-emp" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сумма (AZN)</label>
+            <input type="number" id="fine-amt" placeholder="0" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Причина</label>
+            <input type="text" id="fine-reason" placeholder="Например: Опоздание" style="width:100%; padding:12px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <button id="btn-fine" style="width:100%; padding:14px; background:linear-gradient(135deg,#dc2626,#ef4444); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-size:16px;">⚠️ Выписать штраф</button>
+        </div>
+    </div>
+
+    <div id="tab-add" class="tab-content" style="display:none;">
+        <div style="background:white; padding:30px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); max-width:600px;">
+            <h2 style="margin:0 0 25px 0; color:#1e293b; font-size:18px;">➕ Новый сотрудник</h2>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">ФИО</label>
+            <input type="text" id="new-name" placeholder="Например: Алиев Рустам" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Логин (латиницей)</label>
+            <input type="text" id="new-login" placeholder="Например: rustam" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Пароль</label>
+            <input type="text" id="new-pass" placeholder="Придумайте пароль" style="width:100%; padding:12px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <button id="btn-add" style="width:100%; padding:14px; background:linear-gradient(135deg,#10b981,#34d399); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-size:16px;">✅ Добавить</button>
+        </div>
+    </div>
+
+    <div id="tab-settings" class="tab-content" style="display:none;">
+        <div style="background:white; padding:30px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); max-width:600px;">
+            <h2 style="margin:0 0 25px 0; color:#1e293b; font-size:18px;">🔑 Сменить пароль</h2>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+            <select id="pass-emp" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Новый пароль</label>
+            <input type="text" id="new-password" placeholder="Введите новый пароль" style="width:100%; padding:12px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <button id="btn-pass" style="width:100%; padding:14px; background:linear-gradient(135deg,#4f46e5,#6366f1); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-size:16px;">🔑 Сменить пароль</button>
+        </div>
+    </div>
+</div>
+
+<!-- КАБИНЕТ СОТРУДНИКА -->
+<div id="emp-box" class="fade-in" style="display:none;">
+    <div style="background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; padding:25px 30px; border-radius:20px; margin-bottom:25px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 10px 30px rgba(37,99,235,0.2); flex-wrap: wrap; gap: 15px;">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div style="width:50px; height:50px; background:rgba(255,255,255,0.2); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px;">⏱</div>
+            <div>
+                <div style="font-size:22px; font-weight:800;">AquaTrack</div>
+                <div style="opacity:0.9; font-size:13px;">Рабочее место</div>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px;">
+            <div style="text-align:right;">
+                <div id="emp-name" style="font-weight:700; font-size:16px;"></div>
+                <div style="opacity:0.8; font-size:12px;">Сотрудник</div>
+            </div>
+            <button id="btn-logout-emp" style="padding:10px 20px; background:rgba(255,255,255,0.2); color:white; border:none; border-radius:10px; cursor:pointer; font-weight:600; font-size:14px;">🚪 Выйти</button>
+        </div>
+    </div>
+
+    <div id="emp-status-card" style="background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; padding:40px 20px; border-radius:24px; text-align:center; margin-bottom:25px; box-shadow:0 10px 30px rgba(37,99,235,0.2);">
+        <div id="emp-clock" style="font-size:56px; font-weight:800; margin-bottom:10px; font-variant-numeric:tabular-nums;">--:--</div>
+        <div id="emp-date" style="opacity:0.9; font-size:16px; margin-bottom:20px;"></div>
+        <div id="emp-badge" style="display:inline-block; background:rgba(255,255,255,0.2); padding:10px 24px; border-radius:20px; font-size:16px; font-weight:600; backdrop-filter: blur(4px);">Не на работе</div>
+    </div>
+
+    <div id="emp-actions" style="background:white; padding:30px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.03); margin-bottom:25px;"></div>
+
+    <div style="background:white; padding:25px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.03); margin-bottom:25px;">
+        <h3 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📋 Журнал сегодня</h3>
+        <div id="emp-logs"></div>
+    </div>
+
+    <div style="background:white; padding:25px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+        <h3 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📚 Моя полная история</h3>
+        <div id="emp-history"></div>
+    </div>
+</div>
+
+</div>
+
+<script>
+(function() {
+    const URL = 'https://okqqomgkrvvfabqpvbrm.supabase.co';
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rcXFvbWdrcnZ2ZmFicXB2YnJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMDYwMzYsImV4cCI6MjEwNDU4MjAzNn0.iyuWqW7Mdc5LGymrhaItuwc4gHlPqb5wKuwkD4rU3Sc';
+    
+    const sb = window.supabase.createClient(URL, KEY);
+    let user = null;
+    let allEmps = [];
+
+    const loginBox = document.getElementById('login-box');
+    const adminBox = document.getElementById('admin-box');
+    const empBox = document.getElementById('emp-box');
+    const btnLogin = document.getElementById('btn-login');
+    const errorMsg = document.getElementById('error-msg');
+    const statusEl = document.getElementById('status');
+
+    function getBakuTime() { return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Baku' }); }
+    function getBakuDate() { return new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Baku' }); }
+    function getTodayKey() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Baku' }); }
+    
+    setInterval(() => {
+        const clock = document.getElementById('emp-clock');
+        const date = document.getElementById('emp-date');
+        if (clock) clock.innerText = getBakuTime();
+        if (date) date.innerText = getBakuDate().charAt(0).toUpperCase() + getBakuDate().slice(1);
+    }, 1000);
+
+    sb.from('employees').select('count').limit(1).then(({data, error}) => {
+        if (error) {
+            statusEl.style.background = '#fee2e2';
+            statusEl.style.color = '#dc2626';
+            statusEl.innerHTML = '❌ Ошибка подключения';
+        } else {
+            statusEl.style.background = '#dcfce7';
+            statusEl.style.color = '#16a34a';
+            statusEl.innerHTML = '✅ Система готова к работе';
+            setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
+        }
+    });
+
+    btnLogin.addEventListener('click', async function() {
+        const login = document.getElementById('inp-login').value.trim().toLowerCase();
+        const pass = document.getElementById('inp-pass').value.trim();
+        
+        if (!login) {
+            errorMsg.innerText = 'Введите логин!';
+            errorMsg.style.display = 'block';
+            return;
+        }
+        
+        btnLogin.innerText = '⏳ Вход...';
+        btnLogin.disabled = true;
+        errorMsg.style.display = 'none';
+        
+        const {data, error} = await sb.from('employees').select('*').eq('login', login).single();
+        
+        if (error || !data) {
+            errorMsg.innerText = 'Пользователь не найден!';
+            errorMsg.style.display = 'block';
+            btnLogin.innerText = '🔐 Войти в систему';
+            btnLogin.disabled = false;
+            return;
+        }
+        
+        if (data.role === 'admin' && data.password !== pass) {
+            errorMsg.innerText = 'Неверный пароль!';
+            errorMsg.style.display = 'block';
+            btnLogin.innerText = '🔐 Войти в систему';
+            btnLogin.disabled = false;
+            return;
+        }
+        
+        user = data;
+        localStorage.setItem('at_user', JSON.stringify(user));
+        await loadEmps();
+        showMain();
+    });
+
+    document.getElementById('btn-logout-admin').addEventListener('click', () => { localStorage.removeItem('at_user'); location.reload(); });
+    document.getElementById('btn-logout-emp').addEventListener('click', () => { localStorage.removeItem('at_user'); location.reload(); });
+
+    async function loadEmps() {
+        const {data} = await sb.from('employees').select('*');
+        if (data) allEmps = data;
+    }
+
+    function showMain() {
+        loginBox.style.display = 'none';
+        if (user.role === 'admin') {
+            adminBox.style.display = 'block';
+            empBox.style.display = 'none';
+            document.getElementById('admin-name').innerText = user.name;
+            updateStats();
+            renderEmpList();
+            fillSelects();
+            document.getElementById('cal-date').value = getTodayKey();
+        } else {
+            adminBox.style.display = 'none';
+            empBox.style.display = 'block';
+            document.getElementById('emp-name').innerText = user.name;
+            renderEmpUI();
+            loadEmpHistory();
+        }
+    }
+
+    function updateStats() {
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        document.getElementById('stat-total').innerText = emps.length;
+        document.getElementById('stat-active').innerText = emps.filter(u => u.status === 'working').length;
+        document.getElementById('stat-break').innerText = emps.filter(u => u.status === 'break').length;
+        document.getElementById('stat-offline').innerText = emps.filter(u => u.status === 'offline').length;
+    }
+
+    function renderEmpList() {
+        const list = document.getElementById('emp-list');
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        list.innerHTML = '';
+        emps.forEach(u => {
+            let sc = '#94a3b8', bg = '#f8fafc', txt = '⚫ Оффлайн';
+            if (u.status === 'working') { sc = '#10b981'; bg = '#ecfdf5'; txt = '🟢 На работе'; }
+            else if (u.status === 'break') { sc = '#f59e0b'; bg = '#fffbeb'; txt = '☕ На перерыве'; }
+            
+            const div = document.createElement('div');
+            div.style.cssText = 'padding:16px; border-radius:14px; border:2px solid '+bg+'; background:'+bg+'; display:flex; justify-content:space-between; align-items:center;';
+            div.innerHTML = `<div style="display:flex; align-items:center; gap:15px;"><div style="width:50px; height:50px; background:white; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700; color:${sc}; box-shadow:0 2px 8px rgba(0,0,0,0.05);">${u.name.charAt(0).toUpperCase()}</div><div><div style="font-weight:700; color:#1e293b; font-size:16px;">${u.name}</div><div style="color:#64748b; font-size:13px;">@${u.login}</div></div></div><div style="padding:8px 16px; background:white; border-radius:8px; font-weight:700; color:${sc}; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,0.05);">${txt}</div>`;
+            list.appendChild(div);
+        });
+    }
+
+    function fillSelects() {
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        const opts = '<option value="">Выберите...</option>' + emps.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+        const calOpts = '<option value="all">📊 Все сотрудники</option>' + emps.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+        
+        document.getElementById('fine-emp').innerHTML = opts;
+        document.getElementById('pass-emp').innerHTML = opts;
+        document.getElementById('cal-emp').innerHTML = calOpts;
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const tab = this.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            document.getElementById('tab-' + tab).style.display = 'block';
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.style.background = 'white'; b.style.color = '#64748b'; b.style.border = '2px solid #e2e8f0';
+            });
+            this.style.background = '#2563eb'; this.style.color = 'white'; this.style.border = 'none';
+            if (tab === 'monitoring') { updateStats(); renderEmpList(); }
+        });
+    });
+
+    document.getElementById('btn-cal-show').addEventListener('click', async function() {
+        const empId = document.getElementById('cal-emp').value;
+        const date = document.getElementById('cal-date').value;
+        const results = document.getElementById('cal-results');
+        if (!date) return alert('Выберите дату!');
+        
+        results.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">⏳ Загрузка...</div>';
+        let query = sb.from('activity_logs').select('*, employees(name)').eq('created_at', date).order('created_at', {ascending: false});
+        if (empId !== 'all') query = query.eq('employee_id', empId);
+        
+        const {data, error} = await query;
+        if (error || !data || data.length === 0) {
+            results.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;">📭 Нет записей за эту дату</div>';
+            return;
+        }
+        
+        let html = '<div style="display:grid; gap:10px;">';
+        data.forEach(l => {
+            const t = new Date(l.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Baku'});
+            const name = l.employees ? l.employees.name : 'Неизвестно';
+            html += `<div style="background:#f8fafc; padding:15px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; border-left:4px solid #2563eb;"><div><div style="font-weight:700; color:#1e293b;">${name}</div><div style="color:#64748b; font-size:14px; margin-top:4px;">${l.action}${l.details ? ' — '+l.details : ''}</div></div><div style="color:#64748b; font-family:monospace; font-size:14px;">${t}</div></div>`;
+        });
+        results.innerHTML = html + '</div>';
+    });
+
+    document.getElementById('btn-fine').addEventListener('click', async function() {
+        const empId = document.getElementById('fine-emp').value;
+        const amt = document.getElementById('fine-amt').value;
+        const reason = document.getElementById('fine-reason').value;
+        if (!empId || !amt || !reason) return alert('Заполните все поля!');
+        const emp = allEmps.find(e => e.id === empId);
+        await sb.from('activity_logs').insert([{ employee_id: empId, action: 'ШТРАФ', details: emp.name + ': ' + amt + ' AZN (' + reason + ')' }]);
+        alert('✅ Штраф выписан!');
+        document.getElementById('fine-amt').value = '';
+        document.getElementById('fine-reason').value = '';
+    });
+
+    document.getElementById('btn-add').addEventListener('click', async function() {
+        const name = document.getElementById('new-name').value.trim();
+        const login = document.getElementById('new-login').value.trim().toLowerCase();
+        const pass = document.getElementById('new-pass').value.trim();
+        if (!name || !login || !pass) return alert('Заполните все поля!');
+        const {error} = await sb.from('employees').insert([{ name, login, password: pass, role: 'emp', status: 'offline' }]);
+        if (error) alert('❌ Ошибка: ' + error.message);
+        else {
+            alert('✅ Сотрудник добавлен!');
+            document.getElementById('new-name').value = '';
+            document.getElementById('new-login').value = '';
+            document.getElementById('new-pass').value = '';
+            await loadEmps();
+            fillSelects();
+            updateStats();
+        }
+    });
+
+    document.getElementById('btn-pass').addEventListener('click', async function() {
+        const empId = document.getElementById('pass-emp').value;
+        const np = document.getElementById('new-password').value;
+        if (!empId || !np) return alert('Выберите сотрудника и введите пароль!');
+        await sb.from('employees').update({password: np}).eq('id', empId);
+        alert('✅ Пароль изменён!');
+        document.getElementById('new-password').value = '';
+    });
+
+    function renderEmpUI() {
+        const badge = document.getElementById('emp-badge');
+        const card = document.getElementById('emp-status-card');
+        const actions = document.getElementById('emp-actions');
+        const logsDiv = document.getElementById('emp-logs');
+        
+        card.style.background = 'linear-gradient(135deg,#2563eb,#3b82f6)';
+        
+        if (user.status === 'offline') {
+            badge.innerText = '🏠 Не на работе';
+            actions.innerHTML = '<button id="btn-start" style="width:100%; padding:20px; background:linear-gradient(135deg,#10b981,#34d399); color:white; border:none; border-radius:14px; font-size:18px; font-weight:800; cursor:pointer; box-shadow:0 4px 15px rgba(16,185,129,0.3);">▶ НАЧАТЬ ДЕНЬ</button>';
+            document.getElementById('btn-start').onclick = async () => {
+                await sb.from('employees').update({status:'working'}).eq('id', user.id);
+                await sb.from('activity_logs').insert([{employee_id:user.id, action:'Начало смены'}]);
+                user.status = 'working'; renderEmpUI();
+            };
+        } else if (user.status === 'working') {
+            badge.innerText = '💼 На работе';
+            badge.style.background = '#10b981';
+            actions.innerHTML = '<div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;"><button id="btn-pause" style="padding:20px; background:linear-gradient(135deg,#f59e0b,#fbbf24); color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; box-shadow:0 4px 15px rgba(245,158,11,0.3);">⏸ ПАУЗА</button><button id="btn-stop" style="padding:20px; background:linear-gradient(135deg,#ef4444,#f87171); color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; box-shadow:0 4px 15px rgba(239,68,68,0.3);">⏹ ОСТАНОВИТЬ</button></div>';
+            document.getElementById('btn-pause').onclick = async () => {
+                await sb.from('employees').update({status:'break'}).eq('id', user.id);
+                await sb.from('activity_logs').insert([{employee_id:user.id, action:'Пауза'}]);
+                user.status = 'break'; renderEmpUI();
+            };
+            document.getElementById('btn-stop').onclick = async () => {
+                await sb.from('employees').update({status:'offline'}).eq('id', user.id);
+                await sb.from('activity_logs').insert([{employee_id:user.id, action:'Завершил смену'}]);
+                user.status = 'offline'; renderEmpUI();
+            };
+        } else if (user.status === 'break') {
+            badge.innerText = '☕ На паузе';
+            badge.style.background = '#f59e0b';
+            card.style.background = 'linear-gradient(135deg,#d97706,#f59e0b)';
+            actions.innerHTML = '<div style="text-align:center; margin-bottom:15px; font-weight:700; color:#92400e; font-size:15px;">Причина возвращения:</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><button class="ret-btn" data-r="Обед" style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">🍽 Обед</button><button class="ret-btn" data-r="Перекур" style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">🚬 Перекур</button><button class="ret-btn" data-r="Личные" style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">👤 Личные</button><button class="ret-btn" data-r="Тех." style="padding:14px; background:white; border:2px solid #fcd34d; border-radius:10px; color:#92400e; font-weight:700; cursor:pointer;">🔧 Тех.</button></div>';
+            document.querySelectorAll('.ret-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    const r = btn.dataset.r;
+                    await sb.from('employees').update({status:'working'}).eq('id', user.id);
+                    await sb.from('activity_logs').insert([{employee_id:user.id, action:'Вернулся ('+r+')', details:r}]);
+                    user.status = 'working'; renderEmpUI();
+                };
+            });
+        }
+
+        const {data: logs} = await sb.from('activity_logs').select('*').eq('employee_id', user.id).order('created_at', {ascending:false}).limit(20);
+        const today = getTodayKey();
+        const todayLogs = (logs || []).filter(l => l.created_at && l.created_at.startsWith(today));
+        
+        logsDiv.innerHTML = todayLogs.length ? '' : '<div style="text-align:center; color:#94a3b8; padding:20px;">Нет записей за сегодня</div>';
+        todayLogs.forEach(l => {
+            const t = new Date(l.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Baku'});
+            logsDiv.innerHTML += `<div style="background:#f8fafc; padding:14px; border-radius:10px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; border-left:4px solid #2563eb;"><span style="font-weight:600; color:#1e293b;">${l.action}${l.details ? ' ('+l.details+')' : ''}</span><span style="color:#64748b; font-family:monospace; font-size:14px;">${t}</span></div>`;
+        });
+    }
+
+    async function loadEmpHistory() {
+        const historyDiv = document.getElementById('emp-history');
+        historyDiv.innerHTML = '<div style="text-align:center; color:#64748b; padding:20px;">⏳ Загрузка...</div>';
+        const {data} = await sb.from('activity_logs').select('*').eq('employee_id', user.id).order('created_at', {ascending:false}).limit(100);
+        if (!data || data.length === 0) {
+            historyDiv.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">📭 История пуста</div>';
+            return;
+        }
+        let html = '<div style="display:grid; gap:8px;">';
+        data.forEach(l => {
+            const d = new Date(l.created_at).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Asia/Baku'});
+            const t = new Date(l.created_at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Baku'});
+            html += `<div style="background:#f8fafc; padding:12px 15px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; font-size:14px;"><span style="color:#1e293b; font-weight:500;">${l.action}${l.details ? ' ('+l.details+')' : ''}</span><span style="color:#64748b; font-family:monospace;">${d} ${t}</span></div>`;
+        });
+        historyDiv.innerHTML = html + '</div>';
+    }
+
+    const saved = JSON.parse(localStorage.getItem('at_user'));
+    if (saved && saved.id && saved.id.length > 30) {
+        sb.from('employees').select('*').eq('id', saved.id).single().then(async ({data}) => {
+            if (data) { user = data; await loadEmps(); showMain(); }
+        });
+    }
+})();
+</script>
+</body>
+</html>
