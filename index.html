@@ -2,43 +2,568 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>AquaTrack - Тест подключения</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AquaTrack - Учет рабочего времени</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>body{font-family:sans-serif; padding:20px;}</style>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #1e293b; line-height: 1.5; }
+        input:focus, select:focus, button:focus { outline: 2px solid #3b82f6; outline-offset: 2px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .live-indicator { animation: pulse 2s infinite; }
+        .time-card { padding: 16px; background: #f8fafc; border-radius: 12px; margin-bottom: 12px; }
+    </style>
 </head>
 <body>
 
-<h2>AquaTrack — тест подключения</h2>
-<div id="status">⏳ Проверка подключения...</div>
-<button id="btn-test" style="margin-top:10px;">Повторить тест</button>
+<div class="container">
+
+<div id="login-box" class="fade-in" style="background:white; padding:40px 30px; border-radius:24px; box-shadow:0 10px 40px rgba(0,0,0,0.08); max-width:450px; margin:60px auto;">
+    <div style="text-align:center; margin-bottom:30px;">
+        <div style="width:80px; height:80px; background:linear-gradient(135deg,#2563eb,#3b82f6); border-radius:20px; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">⏱</div>
+        <h1 style="margin:0; color:#1e293b; font-size:28px; font-weight:800;">AquaTrack</h1>
+        <p style="color:#64748b; margin:8px 0 0 0; font-size:15px;">Система учета рабочего времени</p>
+    </div>
+    <div id="status" style="padding:12px; background:#eff6ff; border-radius:12px; margin-bottom:20px; font-size:14px; text-align:center; color:#2563eb;">🔄 Подключение к базе...</div>
+    <input type="text" id="inp-login" placeholder="Логин" style="width:100%; padding:14px; margin-bottom:12px; border:2px solid #e2e8f0; border-radius:12px; font-size:16px;">
+    <input type="password" id="inp-pass" placeholder="Пароль" style="width:100%; padding:14px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:12px; font-size:16px;">
+    <button id="btn-login" style="width:100%; padding:16px; background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; border:none; border-radius:12px; font-size:16px; font-weight:700; cursor:pointer; box-shadow:0 4px 15px rgba(37,99,235,0.3);">🔐 Войти в систему</button>
+    <p id="error-msg" style="color:#ef4444; font-size:14px; margin-top:15px; display:none; text-align:center; font-weight:500;"></p>
+</div>
+
+<div id="admin-box" class="fade-in" style="display:none;">
+    <div style="background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; padding:25px 30px; border-radius:20px; margin-bottom:25px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 10px 30px rgba(37,99,235,0.2); flex-wrap: wrap; gap: 15px;">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div style="width:50px; height:50px; background:rgba(255,255,255,0.2); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px;">⏱</div>
+            <div>
+                <div style="font-size:22px; font-weight:800;">AquaTrack <span class="live-indicator" style="font-size:12px; opacity:0.9;">● LIVE</span></div>
+                <div style="opacity:0.9; font-size:13px;">Панель администратора</div>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px;">
+            <div style="text-align:right;">
+                <div id="admin-name" style="font-weight:700; font-size:16px;"></div>
+                <div style="opacity:0.8; font-size:12px;">Администратор</div>
+            </div>
+            <button id="btn-logout-admin" style="padding:10px 20px; background:rgba(255,255,255,0.2); color:white; border:none; border-radius:10px; cursor:pointer; font-weight:600; font-size:14px;">🚪 Выйти</button>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:15px; margin-bottom:25px;">
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #2563eb;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">👥 Всего</div>
+            <div id="stat-total" style="font-size:32px; font-weight:800; color:#1e293b;">0</div>
+        </div>
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #10b981;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">🟢 На работе</div>
+            <div id="stat-active" style="font-size:32px; font-weight:800; color:#10b981;">0</div>
+        </div>
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #f59e0b;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">☕ Перерыв</div>
+            <div id="stat-break" style="font-size:32px; font-weight:800; color:#f59e0b;">0</div>
+        </div>
+        <div style="background:white; padding:20px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); border-left:5px solid #94a3b8;">
+            <div style="color:#64748b; font-size:12px; margin-bottom:5px;">⚫ Оффлайн</div>
+            <div id="stat-offline" style="font-size:32px; font-weight:800; color:#94a3b8;">0</div>
+        </div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-bottom:25px; flex-wrap:wrap; overflow-x: auto; padding-bottom: 5px;">
+        <button class="tab-btn active" data-tab="monitoring" style="padding:12px 24px; background:#2563eb; color:white; border:none; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">📊 Мониторинг</button>
+        <button class="tab-btn" data-tab="analytics" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">📈 Аналитика</button>
+        <button class="tab-btn" data-tab="calendar" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">📅 Календарь</button>
+        <button class="tab-btn" data-tab="fines" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">💰 Штрафы</button>
+        <button class="tab-btn" data-tab="add" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">➕ Добавить</button>
+        <button class="tab-btn" data-tab="settings" style="padding:12px 24px; background:white; color:#64748b; border:2px solid #e2e8f0; border-radius:12px; font-weight:600; cursor:pointer; font-size:14px; white-space: nowrap;">⚙️ Настройки</button>
+    </div>
+
+    <div id="tab-monitoring" class="tab-content">
+        <div style="background:white; padding:25px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+            <h2 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">👥 Все сотрудники</h2>
+            <div id="emp-list" style="display:grid; gap:12px;"></div>
+        </div>
+    </div>
+
+    <div id="tab-analytics" class="tab-content" style="display:none;">
+        <div style="background:white; padding:25px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+            <h2 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📈 Аналитика</h2>
+            <div style="display:flex; gap:15px; margin-bottom:25px; flex-wrap:wrap; align-items:flex-end;">
+                <div style="flex:1; min-width:200px;">
+                    <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+                    <select id="analytics-emp" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+                </div>
+                <div style="flex:1; min-width:150px;">
+                    <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Период</label>
+                    <select id="analytics-period" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+                        <option value="day">За день</option>
+                        <option value="week">За неделю</option>
+                        <option value="month">За месяц</option>
+                        <option value="year">За год</option>
+                        <option value="custom">Свой период</option>
+                    </select>
+                </div>
+                <div id="custom-dates" style="flex:1; min-width:300px; display:none; gap:10px;">
+                    <div style="flex:1;">
+                        <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">С</label>
+                        <input type="date" id="analytics-from" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">По</label>
+                        <input type="date" id="analytics-to" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+                    </div>
+                </div>
+                <button id="btn-show-analytics" style="padding:12px 24px; background:#2563eb; color:white; border:none; border-radius:10px; font-weight:600; cursor:pointer; font-size:15px; height: 46px;">📊 Показать</button>
+            </div>
+            <div id="analytics-results"></div>
+        </div>
+    </div>
+
+    <div id="tab-calendar" class="tab-content" style="display:none;">
+        <div style="background:white; padding:25px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+            <h2 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📅 История по датам</h2>
+            <div style="display:flex; gap:15px; margin-bottom:25px; flex-wrap:wrap; align-items:flex-end;">
+                <div style="flex:1; min-width:200px;">
+                    <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+                    <select id="cal-emp" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+                </div>
+                <div style="flex:1; min-width:150px;">
+                    <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Дата</label>
+                    <input type="date" id="cal-date" style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+                </div>
+                <button id="btn-cal-show" style="padding:12px 24px; background:#2563eb; color:white; border:none; border-radius:10px; font-weight:600; cursor:pointer; font-size:15px; height: 46px;">🔍 Показать</button>
+            </div>
+            <div id="cal-results"></div>
+        </div>
+    </div>
+
+    <div id="tab-fines" class="tab-content" style="display:none;">
+        <div style="background:white; padding:30px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); max-width:600px;">
+            <h2 style="margin:0 0 25px 0; color:#1e293b; font-size:18px;">💰 Выписать штраф</h2>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+            <select id="fine-emp" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сумма (AZN)</label>
+            <input type="number" id="fine-amt" placeholder="0" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Причина</label>
+            <input type="text" id="fine-reason" placeholder="Например: Опоздание" style="width:100%; padding:12px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <button id="btn-fine" style="width:100%; padding:14px; background:linear-gradient(135deg,#dc2626,#ef4444); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-size:16px;">⚠️ Выписать штраф</button>
+        </div>
+    </div>
+
+    <div id="tab-add" class="tab-content" style="display:none;">
+        <div style="background:white; padding:30px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); max-width:600px;">
+            <h2 style="margin:0 0 25px 0; color:#1e293b; font-size:18px;">➕ Новый сотрудник</h2>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">ФИО</label>
+            <input type="text" id="new-name" placeholder="Например: Алиев Рустам" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Логин (латиницей)</label>
+            <input type="text" id="new-login" placeholder="Например: rustam" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Пароль</label>
+            <input type="text" id="new-pass" placeholder="Придумайте пароль" style="width:100%; padding:12px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <button id="btn-add" style="width:100%; padding:14px; background:linear-gradient(135deg,#10b981,#34d399); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-size:16px;">✅ Добавить</button>
+        </div>
+    </div>
+
+    <div id="tab-settings" class="tab-content" style="display:none;">
+        <div style="background:white; padding:30px; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.03); max-width:600px;">
+            <h2 style="margin:0 0 25px 0; color:#1e293b; font-size:18px;">🔑 Сменить пароль</h2>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Сотрудник</label>
+            <select id="pass-emp" style="width:100%; padding:12px; margin-bottom:16px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;"></select>
+            <label style="display:block; margin-bottom:6px; color:#64748b; font-size:13px; font-weight:600;">Новый пароль</label>
+            <input type="text" id="new-password" placeholder="Введите новый пароль" style="width:100%; padding:12px; margin-bottom:20px; border:2px solid #e2e8f0; border-radius:10px; font-size:15px;">
+            <button id="btn-pass" style="width:100%; padding:14px; background:linear-gradient(135deg,#4f46e5,#6366f1); color:white; border:none; border-radius:10px; font-weight:700; cursor:pointer; font-size:16px;">🔑 Сменить пароль</button>
+        </div>
+    </div>
+</div>
+
+<div id="emp-box" class="fade-in" style="display:none;">
+    <div style="background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; padding:25px 30px; border-radius:20px; margin-bottom:25px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 10px 30px rgba(37,99,235,0.2); flex-wrap: wrap; gap: 15px;">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div style="width:50px; height:50px; background:rgba(255,255,255,0.2); border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:24px;">⏱</div>
+            <div>
+                <div style="font-size:22px; font-weight:800;">AquaTrack</div>
+                <div style="opacity:0.9; font-size:13px;">Рабочее место</div>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:20px;">
+            <div style="text-align:right;">
+                <div id="emp-name" style="font-weight:700; font-size:16px;"></div>
+                <div style="opacity:0.8; font-size:12px;">Сотрудник</div>
+            </div>
+            <button id="btn-logout-emp" style="padding:10px 20px; background:rgba(255,255,255,0.2); color:white; border:none; border-radius:10px; cursor:pointer; font-weight:600; font-size:14px;">🚪 Выйти</button>
+        </div>
+    </div>
+
+    <div id="emp-status-card" style="background:linear-gradient(135deg,#2563eb,#3b82f6); color:white; padding:40px 20px; border-radius:24px; text-align:center; margin-bottom:25px; box-shadow:0 10px 30px rgba(37,99,235,0.2);">
+        <div id="emp-clock" style="font-size:56px; font-weight:800; margin-bottom:10px; font-variant-numeric:tabular-nums;">--:--</div>
+        <div id="emp-date" style="opacity:0.9; font-size:16px; margin-bottom:20px;"></div>
+        <div id="emp-badge" style="display:inline-block; background:rgba(255,255,255,0.2); padding:10px 24px; border-radius:20px; font-size:16px; font-weight:600; backdrop-filter: blur(4px);">Не на работе</div>
+    </div>
+
+    <div id="emp-actions" style="background:white; padding:30px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.03); margin-bottom:25px;"></div>
+
+    <div style="background:white; padding:25px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.03); margin-bottom:25px;">
+        <h3 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📋 Журнал сегодня</h3>
+        <div id="emp-logs"></div>
+    </div>
+
+    <div style="background:white; padding:25px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.03);">
+        <h3 style="margin:0 0 20px 0; color:#1e293b; font-size:18px;">📚 Моя полная история</h3>
+        <div id="emp-history"></div>
+    </div>
+</div>
+
+</div>
 
 <script>
-const URL = 'https://okqqomgkrvvfabqpvbrm.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rcXFvbWdrcnZ2ZmFicXB2YnJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMDYwMzYsImV4cCI6MjEwNDU4MjAzNn0.iyuWqW7Mdc5LGymrhaItuwc4gHlPqb5wKuwkD4rU3Sc';
+(function() {
+    const URL = 'https://okqqomgkrvvfabqpvbrm.supabase.co';
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rcXFvbWdrcnZ2ZmFicXB2YnJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMDYwMzYsImV4cCI6MjEwNDU4MjAzNn0.iyuWqW7Mdc5LGymrhaItuwc4gHlPqb5wKuwkD4rU3Sc';
 
-const sb = window.supabase.createClient(URL, KEY);
-const statusEl = document.getElementById('status');
-const btn = document.getElementById('btn-test');
+    const sb = window.supabase.createClient(URL, KEY);
+    let user = null;
+    let allEmps = [];
+    let allLogs = [];
 
-async function test() {
-    statusEl.innerText = '🔍 Запрос к базе...';
-    try {
-        const { data, error } = await sb.from('employees').select('count').limit(1);
-        if (error) {
-            statusEl.innerHTML = `<span style="color:red;">❌ Ошибка: ${error.message}</span>`;
-            console.error('Supabase error:', error);
-        } else {
-            statusEl.innerHTML = `<span style="color:green;">✅ Успешно! Всего сотрудников: ${data[0]?.count || 0}</span>`;
-            console.log('Data:', data);
-        }
-    } catch (e) {
-        statusEl.innerHTML = `<span style="color:red;">💥 Исключение: ${e.message}</span>`;
-        console.error('Exception:', e);
+    const loginBox = document.getElementById('login-box');
+    const adminBox = document.getElementById('admin-box');
+    const empBox = document.getElementById('emp-box');
+    const btnLogin = document.getElementById('btn-login');
+    const errorMsg = document.getElementById('error-msg');
+    const statusEl = document.getElementById('status');
+
+    function getBakuTime() {
+        return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Baku' });
     }
-}
 
-btn.addEventListener('click', test);
-test(); // запуск при загрузке
+    function getBakuDate() {
+        return new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Baku' });
+    }
+
+    function getTodayKey() {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Baku' });
+    }
+
+    function formatDuration(ms) {
+        if (ms < 0) ms = 0;
+        const totalSeconds = Math.floor(ms / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+    }
+
+    setInterval(() => {
+        const clock = document.getElementById('emp-clock');
+        const date = document.getElementById('emp-date');
+        if (clock) clock.innerText = getBakuTime();
+        if (date) date.innerText = getBakuDate().charAt(0).toUpperCase() + getBakuDate().slice(1);
+    }, 1000);
+
+    sb.from('employees').select('count').limit(1).then(({data, error}) => {
+        if (error) {
+            statusEl.style.background = '#fee2e2';
+            statusEl.style.color = '#dc2626';
+            statusEl.innerHTML = '❌ Ошибка подключения к базе';
+        } else {
+            statusEl.style.background = '#dcfce7';
+            statusEl.style.color = '#16a34a';
+            statusEl.innerHTML = '✅ Система готова к работе';
+            setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
+        }
+    });
+
+    async function loadEmps() {
+        const {data: emps} = await sb.from('employees').select('*');
+        if (emps) allEmps = emps;
+        const {data: logs} = await sb.from('activity_logs').select('*').order('created_at', {ascending: false}).limit(500);
+        if (logs) allLogs = logs;
+    }
+
+    async function showMain() {
+        loginBox.style.display = 'none';
+        if (user.role === 'admin') {
+            adminBox.style.display = 'block';
+            updateStats();
+            renderEmpList();
+            fillSelects();
+            document.getElementById('cal-date').value = getTodayKey();
+            document.getElementById('analytics-from').value = getTodayKey();
+            document.getElementById('analytics-to').value = getTodayKey();
+        } else {
+            empBox.style.display = 'block';
+            renderEmpUI();
+            loadEmpHistory();
+        }
+    }
+
+    function updateStats() {
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        document.getElementById('stat-total').innerText = emps.length;
+        document.getElementById('stat-active').innerText = emps.filter(u => u.status === 'working').length;
+        document.getElementById('stat-break').innerText = emps.filter(u => u.status === 'break').length;
+        document.getElementById('stat-offline').innerText = emps.filter(u => u.status === 'offline').length;
+    }
+
+    function calculateWorkTime(empId, from, to) {
+        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
+        let workMs = 0;
+        let lastCheckIn = null;
+        const now = new Date();
+
+        empLogs.forEach(l => {
+            const d = new Date(l.created_at);
+            if (l.action.includes('Начало смены') || l.action.includes('Вернулся')) {
+                lastCheckIn = d;
+            } else if (l.action.includes('Пауза') || l.action.includes('Завершил')) {
+                if (lastCheckIn) {
+                    workMs += (d - lastCheckIn);
+                    lastCheckIn = null;
+                }
+            }
+        });
+
+        if (lastCheckIn && user.id === empId && allEmps.find(u => u.id === empId)?.status === 'working') {
+            workMs += (now - lastCheckIn);
+        }
+
+        return formatDuration(workMs);
+    }
+
+    function groupByDay(empId, from, to) {
+        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
+        const grouped = {};
+        let lastCheckIn = null;
+
+        empLogs.forEach(l => {
+            const day = l.created_at.split('T')[0];
+            if (!grouped[day]) grouped[day] = 0;
+            const d = new Date(l.created_at);
+
+            if (l.action.includes('Начало смены') || l.action.includes('Вернулся')) {
+                lastCheckIn = d;
+            } else if (l.action.includes('Пауза') || l.action.includes('Завершил')) {
+                if (lastCheckIn) {
+                    grouped[lastCheckIn.toISOString().split('T')[0]] += (d - lastCheckIn);
+                    lastCheckIn = null;
+                }
+            }
+        });
+
+        if (lastCheckIn && user.id === empId && allEmps.find(u => u.id === empId)?.status === 'working') {
+            const day = getTodayKey();
+            grouped[day] = (grouped[day] || 0) + (new Date() - lastCheckIn);
+        }
+
+        return grouped;
+    }
+
+    function getPeriodDates(period) {
+        const now = new Date();
+        const dates = {};
+        switch (period) {
+            case 'day':
+                dates.from = dates.to = getTodayKey();
+                break;
+            case 'week':
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                dates.from = startOfWeek.toISOString().split('T')[0];
+                dates.to = now.toISOString().split('T')[0];
+                break;
+            case 'month':
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                dates.from = startOfMonth.toISOString().split('T')[0];
+                dates.to = endOfMonth.toISOString().split('T')[0];
+                break;
+            case 'year':
+                dates.from = `${now.getFullYear()}-01-01`;
+                dates.to = `${now.getFullYear()}-12-31`;
+                break;
+            case 'custom':
+                dates.from = document.getElementById('analytics-from').value;
+                dates.to = document.getElementById('analytics-to').value;
+                break;
+        }
+        return dates;
+    }
+
+    function fillSelects() {
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        const opts = '<option value="">Выберите...</option>' + emps.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+        const calOpts = '<option value="all">📊 Все сотрудники</option>' + emps.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+        document.getElementById('fine-emp').innerHTML = opts;
+        document.getElementById('pass-emp').innerHTML = opts;
+        document.getElementById('cal-emp').innerHTML = calOpts;
+        document.getElementById('analytics-emp').innerHTML = opts;
+    }
+
+    function renderEmpList() {
+        const list = document.getElementById('emp-list');
+        const emps = allEmps.filter(u => u.role !== 'admin');
+        list.innerHTML = '';
+        emps.forEach(u => {
+            const { workMs, breakMs } = calculateWorkTime(u.id);
+            const workTime = formatDuration(workMs);
+            const breakTime = formatDuration(breakMs);
+            let sc = '#94a3b8', bg = '#f8fafc', txt = '⚫ Оффлайн', icon = '🏠';
+            if (u.status === 'working') { sc = '#10b981'; bg = '#ecfdf5'; txt = '🟢 На работе'; icon = '💼'; }
+            else if (u.status === 'break') { sc = '#f59e0b'; bg = '#fffbeb'; txt = '☕ На перерыве'; icon = '☕'; }
+
+            const div = document.createElement('div');
+            div.style.cssText = `padding:20px; border-radius:14px; border:2px solid ${bg}; background:${bg}; display:grid; grid-template-columns: 1fr auto; gap:15px; align-items:center;`;
+            div.innerHTML = `
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <div style="width:55px; height:55px; background:white; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:${sc}; box-shadow:0 2px 8px rgba(0,0,0,0.05);">${u.name.charAt(0)}</div>
+                    <div>
+                        <div style="font-weight:700; color:#1e293b; font-size:16px;">${u.name}</div>
+                        <div style="color:#64748b; font-size:13px; margin-bottom:4px;">@${u.login}</div>
+                        <div style="display:flex; gap:15px; font-size:13px;">
+                            <span style="color:${sc}; font-weight:600;">${icon} ${workTime}</span>
+                            <span style="color:#f59e0b; font-weight:600;">☕ ${breakTime}</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="padding:10px 18px; background:white; border-radius:10px; font-weight:700; color:${sc}; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,0.05); white-space:nowrap;">${txt}</div>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    // Аналитика
+    document.getElementById('btn-show-analytics').addEventListener('click', async () => {
+        const empId = document.getElementById('analytics-emp').value;
+        const period = document.getElementById('analytics-period').value;
+        const {from, to} = getPeriodDates(period);
+        if (!empId || !from || !to) return alert('Выберите сотрудника и период');
+        
+        const emp = allEmps.find(u => u.id === empId);
+        const empLogs = allLogs.filter(l => l.employee_id === empId && new Date(l.created_at) >= new Date(from) && new Date(l.created_at) <= new Date(to));
+        const grouped = groupByDay(empId, empLogs, from, to);
+        const totalWorkMs = Object.values(grouped).reduce((a, b) => a + b, 0);
+
+        const results = document.getElementById('analytics-results');
+        results.innerHTML = `
+            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Общий фонд времени: ${formatDuration(totalWorkMs)}</div>
+            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Штрафы:</div>
+            <div id="analytics-fines" style="margin-bottom:20px;"></div>
+            <div style="margin-bottom:20px; background:#f8fafc; padding:16px; border-radius:12px; font-size:14px; font-weight:600; color:#1e293b;">Разбивка по дням:</div>
+        `;
+
+        const finesDiv = document.getElementById('analytics-fines');
+        const fines = empLogs.filter(l => l.action === 'ШТРАФ');
+        if (fines.length === 0) {
+            finesDiv.innerHTML = '<div style="color:#94a3b8; padding:12px;">Нет штрафов</div>';
+        } else {
+            fines.forEach(f => {
+                finesDiv.innerHTML += `<div style="background:#fee2e2; padding:12px; border-radius:10px; margin-bottom:8px; color:#dc2626; font-weight:600;">${f.details}</div>`;
+            });
+        }
+
+        const daysDiv = document.createElement('div');
+        Object.entries(grouped).forEach(([day, ms]) => {
+            const time = formatDuration(ms);
+            const div = document.createElement('div');
+            div.style.cssText = 'background:#f8fafc; padding:12px; margin-bottom:8px; border-left:4px solid #2563eb; border-radius:8px; display:flex; justify-content:space-between;';
+            div.innerHTML = `<div style="font-weight:600; color:#1e293b;">${day}</div><div style="color:#64748b;">${time}</div>`;
+            daysDiv.appendChild(div);
+        });
+        results.appendChild(daysDiv);
+    });
+
+    // Вкладки
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            document.getElementById('tab-' + this.dataset.tab).style.display = 'block';
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.style.background = 'white';
+                b.style.color = '#64748b';
+                b.style.border = '2px solid #e2e8f0';
+            });
+            this.style.background = '#2563eb';
+            this.style.color = 'white';
+            this.style.border = 'none';
+            if (this.dataset.tab === 'monitoring') {
+                updateStats();
+                renderEmpList();
+            }
+        });
+    });
+
+    document.getElementById('analytics-period').addEventListener('change', function() {
+        const period = this.value;
+        document.getElementById('custom-dates').style.display = period === 'custom' ? 'flex' : 'none';
+    });
+
+    // Вход
+    btnLogin.addEventListener('click', async () => {
+        const login = document.getElementById('inp-login').value.trim().toLowerCase();
+        const pass = document.getElementById('inp-pass').value.trim();
+        if (!login) {
+            errorMsg.innerText = 'Введите логин!';
+            errorMsg.style.display = 'block';
+            return;
+        }
+        btnLogin.innerText = '⏳ Вход...';
+        btnLogin.disabled = true;
+
+        const {data, error} = await sb.from('employees').select('*').eq('login', login).single();
+        if (error || !data) {
+            errorMsg.innerText = '❌ Пользователь не найден!';
+            errorMsg.style.display = 'block';
+            btnLogin.innerText = '🔐 Войти в систему';
+            btnLogin.disabled = false;
+            return;
+        }
+
+        if (data.role === 'admin' && data.password !== pass) {
+            errorMsg.innerText = '❌ Неверный пароль!';
+            errorMsg.style.display = 'block';
+            btnLogin.innerText = '🔐 Войти в систему';
+            btnLogin.disabled = false;
+            return;
+        }
+
+        user = data;
+        localStorage.setItem('at_user', JSON.stringify(user));
+        await loadEmps();
+        showMain();
+    });
+
+    // Вход по Enter
+    document.getElementById('inp-login').addEventListener('keydown', e => {
+        if (e.key === 'Enter') btnLogin.click();
+    });
+    document.getElementById('inp-pass').addEventListener('keydown', e => {
+        if (e.key === 'Enter') btnLogin.click();
+    });
+
+    // Выход
+    document.getElementById('btn-logout-admin').addEventListener('click', () => {
+        localStorage.removeItem('at_user');
+        location.reload();
+    });
+    document.getElementById('btn-logout-emp').addEventListener('click', () => {
+        localStorage.removeItem('at_user');
+        location.reload();
+    });
+
+    // Авто-вход
+    (async () => {
+        const saved = JSON.parse(localStorage.getItem('at_user'));
+        if (saved && saved.id) {
+            const {data} = await sb.from('employees').select('*').eq('id', saved.id).single();
+            if (data) {
+                user = data;
+                await loadEmps();
+                showMain();
+            }
+        }
+    })();
+})();
 </script>
 </body>
 </html>
